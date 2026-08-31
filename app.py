@@ -521,6 +521,10 @@ def get_xgb_models(df_hist):
     return clf, over_clf
 
 def fetch_sporttery_odds(home_team, away_team):
+    # 检查本地脚本是否存在
+    if not os.path.exists(SCRIPT_PATH):
+        logger.warning("本地脚本不存在，无法获取赔率")
+        return None
     try:
         result = subprocess.run(
             ["python", SCRIPT_PATH, "--pretty"],
@@ -555,6 +559,10 @@ def fetch_sporttery_odds(home_team, away_team):
         return None
 
 def fetch_all_matches():
+    # 检查本地脚本是否存在
+    if not os.path.exists(SCRIPT_PATH):
+        logger.warning("本地脚本不存在，无法获取比赛列表")
+        return [], set()
     try:
         result = subprocess.run(
             ["python", SCRIPT_PATH, "--pretty"],
