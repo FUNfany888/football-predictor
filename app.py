@@ -179,9 +179,38 @@ TEAM_NAME_MAP = {
     'Wigan': '维冈竞技', 'Wycombe': '韦康比流浪者',
     'Inter': '国际米兰', 'Milan': 'AC米兰',
     'Celta Vigo': '维戈塞尔塔', 'Wrexham': '雷克斯汉姆',
+    'Kashiwa Reysol': '柏太阳神',
+    'Machida Zelvia': '町田泽维亚',
+    'Vanraure Hachinohe': '八户南源',
+    'Al Hilal': '利雅得新月',
+    'Osnabrück': '奥斯纳布吕克',
+    'Kawasaki Frontale': '川崎前锋',
+    'Cerezo Osaka': '大阪樱花',
+    'Tochigi City': '枥木城',
+    'Al-Ahli': '吉达国民',
+    'Portsmouth': '朴次茅斯',
+    'Kashima Antlers': '鹿岛鹿角',
+    'Mito HollyHock': '水户蜀葵',
+    'Mirassol': '米拉索尔',
+    'Santos': '桑托斯',
+    'Gremio': '格雷米奥',
+    'Internacional': '巴西国际',
+    'Palmeiras': '帕尔梅拉斯',
+    'Al-Khaleej': '赛哈特海湾',
+    'Al-Diriyah': '迪里耶',
+    'Al-Diraiyah': '迪里耶',          # 别名
+    'Al-Qadsiah': '胡巴尔卡德西亚',
+    'Al Qadsiah': '胡巴尔卡德西亚',   # 别名
+    'Al-Fayha': '迈季迈阿宽广',
+    'Al Fayha': '迈季迈阿宽广',       # 别名
+    'Al-Kholood': '拉斯永恒',
+    'Al Kholood': '拉斯永恒',         # 别名
+    'NEOM SC': '新未来SC',
+    'NEOM Sports Club': '新未来SC'
 }
 TEAM_NAME_MAP_REVERSE = {v: k for k, v in TEAM_NAME_MAP.items()}
 
+# ------------------------- 辅助函数 -------------------------
 def get_df_hash(df):
     return hashlib.md5(pd.util.hash_pandas_object(df).values.tobytes()).hexdigest()
 
@@ -198,22 +227,18 @@ def load_history():
     else:
         logger.info("本地无数据，开始下载...")
         df = download_data()
-        # ---------- 智能数值转换（解决 Parquet 写入类型问题） ----------
         for col in df.columns:
             if df[col].dtype == object:
                 converted = pd.to_numeric(df[col], errors='coerce')
-                # 如果该列大部分（80%）以上能转为数字，则替换
                 if converted.notna().mean() > 0.8:
                     df[col] = converted
                     logger.info(f"列 '{col}' 已从 object 转换为数值类型")
-        # ----------------------------------------------------------------
         df = precompute_elo(df)
         df = precompute_strength_diff(df)
         style_map = compute_team_style(df)
         df['style'] = df['hometeam'].map(style_map)
         df.to_parquet(HISTORY_PATH, index=False)
         logger.info("数据保存至 Parquet")
-    # 确保必需列存在
     if 'elo_diff' not in df.columns:
         df = precompute_elo(df)
         df.to_parquet(HISTORY_PATH, index=False)
@@ -237,7 +262,6 @@ def download_data():
                 logger.info(f"✅ {league} {season}")
             except Exception as e:
                 logger.warning(f"⏳ {league} {season} 失败: {e}")
-                pass
     if not all_data:
         raise Exception("没有下载到任何数据")
     df = pd.concat(all_data, ignore_index=True)
@@ -331,14 +355,22 @@ def force_update_data():
     st.cache_data.clear()
     return load_history()
 
+# ------------------------- 优化后的特征函数（支持主客场、趋势） -------------------------
 @st.cache_data(ttl=3600)
-def get_team_stats_cached(team, date_limit_iso, df_hash):
+def get_team_stats_cached(team, date_limit_iso, df_hash, venue='all'):
     global _DF_HIST
     df = _DF_HIST
     date_limit = pd.to_datetime(date_limit_iso)
     data = df[(df['hometeam']==team)|(df['awayteam']==team)]
-    data = data[data['date'] < date_limit].sort_values('date').tail(10)
+    data = data[data['date'] < date_limit].sort_values('date')
+    if venue == 'home':
+        data = data[data['hometeam']==team]
+    elif venue == 'away':
+        data = data[data['awayteam']==team]
+    data = data.tail(10)
     if len(data) == 0:
+        if venue != 'all':
+            return get_team_stats_cached(team, date_limit_iso, df_hash, 'all')
         return {'gf':1.2, 'ga':1.2, 'wr':0.3, 'gf_std':0.5}
     gf_list=[]; ga_list=[]; wr_list=[]
     for _, r in data.iterrows():
@@ -350,6 +382,14 @@ def get_team_stats_cached(team, date_limit_iso, df_hash):
     n = len(data)
     gf_std = np.std(gf_list) if len(gf_list)>1 else 0.5
     return {'gf': sum(gf_list)/n, 'ga': sum(ga_list)/n, 'wr': sum(wr_list)/n, 'gf_std': gf_std}
+
+def get_team_stats(team, df_history, date_limit, lookback=10, venue='all'):
+    return get_team_stats_cached(team, date_limit.isoformat(), _DF_HASH, venue)
+
+def get_trend(team, df_history, date_limit):
+    stats_3 = get_team_stats(team, df_history, date_limit, lookback=3)
+    stats_10 = get_team_stats(team, df_history, date_limit, lookback=10)
+    return stats_3['wr'] - stats_10['wr']
 
 @st.cache_data(ttl=3600)
 def get_team_dynamic_over_rate_cached(team, date_limit_iso, df_hash):
@@ -394,9 +434,6 @@ def get_team_fatigue_cached(team, date_limit_iso, df_hash):
     recent = data[data['date'] >= date_limit - timedelta(days=7)]
     return len(recent)
 
-def get_team_stats(team, df_history, date_limit, lookback=10):
-    return get_team_stats_cached(team, date_limit.isoformat(), _DF_HASH)
-
 def get_team_dynamic_over_rate(team, df_history, date_limit, lookback_short=5, lookback_long=10):
     return get_team_dynamic_over_rate_cached(team, date_limit.isoformat(), _DF_HASH)
 
@@ -419,6 +456,7 @@ def get_league_dynamic_threshold(df_hist, date_limit, lookback_days=365, offset=
     over_rate = (total_goals >= 3).mean()
     return max(0.35, min(0.55, over_rate * 1.0 + offset))
 
+# ------------------------- XGBoost 模型（保持不变） -------------------------
 def train_xgb_classifier(df):
     cutoff = df['date'].max() - timedelta(days=365*3)
     train_df = df[df['date'] > cutoff].copy()
@@ -520,46 +558,127 @@ def get_xgb_models(df_hist):
     over_clf = train_xgb_over_classifier(df_hist)
     return clf, over_clf
 
-def fetch_sporttery_odds(home_team, away_team):
-    # 检查本地脚本是否存在
-    if not os.path.exists(SCRIPT_PATH):
-        logger.warning("本地脚本不存在，无法获取赔率")
-        return None
-    try:
-        result = subprocess.run(
-            ["python", SCRIPT_PATH, "--pretty"],
-            capture_output=True,
-            text=True,
-            timeout=15
-        )
-        if result.returncode != 0:
-            return None
-        data = json.loads(result.stdout)
-        matches = data.get('matches', [])
-        for match in matches:
-            identity = match.get('identity', {})
-            home_cn = identity.get('homeTeamAllName', '')
-            away_cn = identity.get('awayTeamAllName', '')
-            if not home_cn or not away_cn:
-                continue
-            home_en = TEAM_NAME_MAP_REVERSE.get(home_cn)
-            away_en = TEAM_NAME_MAP_REVERSE.get(away_cn)
-            if home_en == home_team and away_en == away_team:
-                odds = match.get('odds', {}).get('had', {})
-                if not odds:
-                    return None
-                return {
-                    'odds_h': float(odds.get('h', 1.0)),
-                    'odds_d': float(odds.get('d', 1.0)),
-                    'odds_a': float(odds.get('a', 1.0))
-                }
-        return None
-    except Exception as e:
-        logger.error(f"获取赔率失败: {e}")
-        return None
+# ------------------------- 伤停、xG（保留原样） -------------------------
+try:
+    from xgpy import Understat
+    XGPY_AVAILABLE = True
+except ImportError:
+    XGPY_AVAILABLE = False
 
+try:
+    import requests
+    from bs4 import BeautifulSoup
+    SCRAPE_AVAILABLE = True
+except ImportError:
+    SCRAPE_AVAILABLE = False
+
+def get_injury_info(team, df_history, date_limit):
+    if not SCRAPE_AVAILABLE:
+        return 0
+    try:
+        team_url = team.replace(' ', '-').lower()
+        url = f"https://www.transfermarkt.com/{team_url}/verletztespieler/verein/0"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code != 200:
+            return 0
+        soup = BeautifulSoup(response.text, 'html.parser')
+        injury_rows = soup.select('table.items tbody tr')
+        key_injuries = 0
+        for row in injury_rows:
+            cells = row.find_all('td')
+            if len(cells) >= 2:
+                key_injuries += 1
+        if key_injuries >= 3:
+            return 2
+        elif key_injuries >= 1:
+            return 1
+        return 0
+    except:
+        return 0
+
+def get_xg_data(team, df_history, date_limit):
+    if not XGPY_AVAILABLE:
+        return 0.0
+    try:
+        understat = Understat()
+        leagues = ['EPL', 'La_liga', 'Bundesliga', 'Serie_A', 'Ligue_1']
+        total_xg = 0; count = 0
+        for league in leagues:
+            try:
+                matches = understat.get_league_matches(league, season='2024')
+                for match in matches:
+                    if match.get('h') == team or match.get('a') == team:
+                        if match.get('h') == team:
+                            total_xg += float(match.get('h_xG', 0))
+                        else:
+                            total_xg += float(match.get('a_xG', 0))
+                        count += 1
+                        if count >= 10:
+                            return total_xg / count
+            except:
+                continue
+        return total_xg / count if count > 0 else 0.0
+    except:
+        return 0.0
+
+# ------------------------- API 获取比赛（优先 The Odds API） -------------------------
 def fetch_all_matches():
-    # 检查本地脚本是否存在
+    api_key = st.secrets.get("ODDS_API_KEY", "")
+    if api_key and 'requests' in globals():
+        try:
+            url = f"https://api.the-odds-api.com/v4/sports/?apiKey={api_key}&regions=eu&markets=h2h"
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                sports = response.json()
+                soccer_key = None
+                for sport in sports:
+                    if 'soccer' in sport['key'].lower():
+                        soccer_key = sport['key']
+                        break
+                if not soccer_key:
+                    st.warning("未找到足球赛事数据")
+                    return [], set()
+                odds_url = f"https://api.the-odds-api.com/v4/sports/{soccer_key}/odds/?apiKey={api_key}&regions=eu&markets=h2h"
+                odds_resp = requests.get(odds_url, timeout=10)
+                if odds_resp.status_code == 200:
+                    matches = odds_resp.json()
+                    match_list = []
+                    missing_teams = set()
+                    for m in matches:
+                        home = m['home_team']
+                        away = m['away_team']
+                        home_cn = TEAM_NAME_MAP.get(home, home)
+                        away_cn = TEAM_NAME_MAP.get(away, away)
+                        odds = m['bookmakers'][0]['markets'][0]['outcomes'] if m.get('bookmakers') else []
+                        if len(odds) >= 3:
+                            odds_h = float(odds[0]['price'])
+                            odds_d = float(odds[1]['price'])
+                            odds_a = float(odds[2]['price'])
+                        else:
+                            continue
+                        match_list.append({
+                            'home_en': home,
+                            'away_en': away,
+                            'home_cn': home_cn,
+                            'away_cn': away_cn,
+                            'odds_h': odds_h,
+                            'odds_d': odds_d,
+                            'odds_a': odds_a,
+                            'key': str(m['id'])
+                        })
+                    return match_list, missing_teams
+                else:
+                    st.warning("The Odds API 返回错误，尝试本地脚本...")
+            else:
+                st.warning("The Odds API 连接失败，尝试本地脚本...")
+        except Exception as e:
+            logger.error(f"The Odds API 调用失败: {e}")
+            st.warning("使用 The Odds API 失败，回退到本地脚本...")
+    else:
+        if not api_key:
+            st.info("未配置 ODDS_API_KEY，将使用本地脚本（如果可用）")
+
     if not os.path.exists(SCRIPT_PATH):
         logger.warning("本地脚本不存在，无法获取比赛列表")
         return [], set()
@@ -610,6 +729,50 @@ def fetch_all_matches():
         st.error(f"获取比赛列表失败: {e}")
         return [], set()
 
+def fetch_sporttery_odds(home_team, away_team):
+    api_key = st.secrets.get("ODDS_API_KEY", "")
+    if api_key and 'requests' in globals():
+        try:
+            # The Odds API 不支持按球队筛选，此处直接返回 None 走本地回退
+            pass
+        except:
+            pass
+    if not os.path.exists(SCRIPT_PATH):
+        return None
+    try:
+        result = subprocess.run(
+            ["python", SCRIPT_PATH, "--pretty"],
+            capture_output=True,
+            text=True,
+            timeout=15
+        )
+        if result.returncode != 0:
+            return None
+        data = json.loads(result.stdout)
+        matches = data.get('matches', [])
+        for match in matches:
+            identity = match.get('identity', {})
+            home_cn = identity.get('homeTeamAllName', '')
+            away_cn = identity.get('awayTeamAllName', '')
+            if not home_cn or not away_cn:
+                continue
+            home_en = TEAM_NAME_MAP_REVERSE.get(home_cn)
+            away_en = TEAM_NAME_MAP_REVERSE.get(away_cn)
+            if home_en == home_team and away_en == away_team:
+                odds = match.get('odds', {}).get('had', {})
+                if not odds:
+                    return None
+                return {
+                    'odds_h': float(odds.get('h', 1.0)),
+                    'odds_d': float(odds.get('d', 1.0)),
+                    'odds_a': float(odds.get('a', 1.0))
+                }
+        return None
+    except Exception as e:
+        logger.error(f"获取赔率失败: {e}")
+        return None
+
+# ------------------------- 核心预测函数（优化版，含分析） -------------------------
 def compute_base_lambdas(home, away, df_hist, predict_date, params):
     now = predict_date
     elo_w = params['elo_weight']
@@ -620,15 +783,36 @@ def compute_base_lambdas(home, away, df_hist, predict_date, params):
     over_off = params['over_threshold_offset']
     xgb_w = params['xgb_fusion_weight']
 
-    hs = get_team_stats(home, df_hist, now)
-    aw = get_team_stats(away, df_hist, now)
+    # 主队主场数据，客队客场数据
+    hs_home = get_team_stats(home, df_hist, now, venue='home')
+    aw_away = get_team_stats(away, df_hist, now, venue='away')
+    hs_all = get_team_stats(home, df_hist, now, venue='all')
+    aw_all = get_team_stats(away, df_hist, now, venue='all')
+
+    if len(df_hist[(df_hist['hometeam']==home) & (df_hist['date']<now)]) < 3:
+        hs = hs_all
+    else:
+        hs = hs_home
+    if len(df_hist[(df_hist['awayteam']==away) & (df_hist['date']<now)]) < 3:
+        aw = aw_all
+    else:
+        aw = aw_away
+
     home_strength = (hs['gf']*0.5 - hs['ga']*0.3 + hs['wr']*0.2)
     away_strength = (aw['gf']*0.5 - aw['ga']*0.3 + aw['wr']*0.2)
     diff_stats = home_strength - away_strength
+
+    # 加入状态趋势
+    home_trend = get_trend(home, df_hist, now)
+    away_trend = get_trend(away, df_hist, now)
+    trend_diff = home_trend - away_trend
+    diff_stats += 0.1 * trend_diff
+
     home_elo_advantage = df_hist[(df_hist['hometeam']==home)]['elo_diff'].tail(10).mean() if len(df_hist[(df_hist['hometeam']==home)])>0 else 0
     diff_elo = home_elo_advantage
     diff = elo_w * diff_elo + (1-elo_w) * diff_stats
 
+    # 风格
     home_style = 0
     away_style = 0
     if 'style' in df_hist.columns:
@@ -640,21 +824,22 @@ def compute_base_lambdas(home, away, df_hist, predict_date, params):
             away_style = away_style_row['style'].iloc[0]
     style_factor = 1.05 if home_style != away_style else 1.0
 
+    # 伤病
     injury_h = get_injury_info(home, df_hist, now)
     injury_a = get_injury_info(away, df_hist, now)
     injury_factor_h = 1.0 - injury_h * 0.05
     injury_factor_a = 1.0 - injury_a * 0.05
 
-    home_over = get_team_dynamic_over_rate(home, df_hist, now)
-    away_over = get_team_dynamic_over_rate(away, df_hist, now)
     home_defense_factor = get_opponent_defense_factor(away, df_hist, now)
     away_defense_factor = get_opponent_defense_factor(home, df_hist, now)
     home_attack_boost = 1 / home_defense_factor if home_defense_factor>0 else 1.0
     away_attack_boost = 1 / away_defense_factor if away_defense_factor>0 else 1.0
+
     home_fatigue = get_team_fatigue(home, df_hist, now)
     away_fatigue = get_team_fatigue(away, df_hist, now)
     fatigue_factor_home = max(0.85, 1 - (home_fatigue-1)*0.05)
     fatigue_factor_away = max(0.85, 1 - (away_fatigue-1)*0.05)
+
     home_std = hs['gf_std']; away_std = aw['gf_std']
     volatility_factor_h = 1 + home_std * vol_sc
     volatility_factor_a = 1 + away_std * vol_sc
@@ -823,31 +1008,30 @@ def predict_match(home, away, odds_h, odds_d, odds_a, df_hist, xgb_model, xgb_ov
         if conservative[0] == reliable[0]:
             conservative = score_probs[1] if len(score_probs) > 1 else reliable
 
-    reason_parts = []
+    # 生成分析摘要
+    analysis = []
     if abs_diff > 0.3:
-        if diff > 0:
-            reason_parts.append(f"主队实力明显占优（实力差 {diff:.2f}）")
-        else:
-            reason_parts.append(f"客队实力明显占优（实力差 {-diff:.2f}）")
-    else:
-        reason_parts.append("两队实力接近")
+        analysis.append(f"实力差距{'主强客弱' if diff>0 else '客强主弱'}（差值 {abs_diff:.2f}）")
     hs = get_team_stats(home, df_hist, now)
     aw = get_team_stats(away, df_hist, now)
     if hs['wr'] > 0.6:
-        reason_parts.append("主队近10场胜率较高")
+        analysis.append(f"主队近10场胜率较高（{hs['wr']*100:.0f}%）")
     elif hs['wr'] < 0.3:
-        reason_parts.append("主队近10场胜率较低")
+        analysis.append(f"主队近10场胜率较低（{hs['wr']*100:.0f}%）")
     if aw['wr'] > 0.6:
-        reason_parts.append("客队近10场胜率较高")
+        analysis.append(f"客队近10场胜率较高（{aw['wr']*100:.0f}%）")
     elif aw['wr'] < 0.3:
-        reason_parts.append("客队近10场胜率较低")
+        analysis.append(f"客队近10场胜率较低（{aw['wr']*100:.0f}%）")
     if over_prob > 0.55:
-        reason_parts.append("两队近期大球倾向明显")
+        analysis.append("大球倾向明显")
     elif over_prob < 0.35:
-        reason_parts.append("两队近期偏向小球")
-    reason_parts.append(f"历史相似比赛中 {reliable[0]} 出现频率最高（{reliable[1]*100:.1f}%）")
-    reason = "；".join(reason_parts)
+        analysis.append("小球倾向明显")
+    if (diff > 0 and lose > 0.3) or (diff < 0 and win > 0.3):
+        analysis.append("⚠️ 存在爆冷可能")
+    analysis.append(f"最可能比分 {reliable[0]} ({reliable[1]*100:.1f}%)")
+    analysis_text = "；".join(analysis)
 
+    # 融合市场赔率
     market_h = 1/odds_h; market_d = 1/odds_d; market_a = 1/odds_a
     market_total = market_h + market_d + market_a
     market_h /= market_total; market_d /= market_total; market_a /= market_total
@@ -876,7 +1060,7 @@ def predict_match(home, away, odds_h, odds_d, odds_a, df_hist, xgb_model, xgb_ov
         '稳健比分': conservative[0],
         '稳健概率': conservative[1],
         '比分概率': score_probs[:5],
-        'reason': reason
+        'analysis': analysis_text
     }
 
 def fallback_predict(odds_h, odds_d, odds_a):
@@ -894,7 +1078,7 @@ def fallback_predict(odds_h, odds_d, odds_a):
         '激进比分': '2:1', '激进概率': 0.08,
         '稳健比分': '0:0', '稳健概率': 0.07,
         '比分概率': [('1:1', 0.1), ('0:0', 0.08), ('1:0', 0.07), ('0:1', 0.07), ('2:1', 0.06)],
-        'reason': '数据不足，基于赔率估算'
+        'analysis': '数据不足，基于赔率估算'
     }
 
 def kelly_suggestion(prob, odds):
@@ -903,23 +1087,11 @@ def kelly_suggestion(prob, odds):
     k = ((odds-1)*prob - (1-prob)) / (odds-1)
     return max(0, k * 0.25)
 
+# ------------------------- 批量预测（含信心标签） -------------------------
 def predict_all_matches(matches, df_hist, xgb_model, xgb_over_model):
     if not matches:
         return pd.DataFrame()
     now = pd.Timestamp.now()
-    team_feats = {}
-    all_teams = set()
-    for match in matches:
-        if match.get('home_en'):
-            all_teams.add(match['home_en'])
-        if match.get('away_en'):
-            all_teams.add(match['away_en'])
-    for team in all_teams:
-        team_feats[team] = {
-            'stats': get_team_stats(team, df_hist, now),
-            'over_rate': get_team_dynamic_over_rate(team, df_hist, now),
-            'fatigue': get_team_fatigue(team, df_hist, now),
-        }
     results = []
     for match in matches:
         home = match['home_en']; away = match['away_en']
@@ -928,6 +1100,20 @@ def predict_all_matches(matches, df_hist, xgb_model, xgb_over_model):
         odds_h = match['odds_h']; odds_d = match['odds_d']; odds_a = match['odds_a']
         try:
             r = predict_match(home, away, odds_h, odds_d, odds_a, df_hist, xgb_model, xgb_over_model)
+            # 生成信心标签
+            conf_label = ""
+            if r['主胜'] > 0.65 and r['主胜'] > r['客胜'] + 0.15:
+                conf_label = "🔥 高信心"
+            elif r['客胜'] > 0.65 and r['客胜'] > r['主胜'] + 0.15:
+                conf_label = "🔥 高信心"
+            elif abs(r['主胜'] - r['客胜']) < 0.1:
+                conf_label = "🤝 难分伯仲"
+            if (r['主胜'] < 0.35 and r['客胜'] > 0.35) or (r['客胜'] < 0.35 and r['主胜'] > 0.35):
+                conf_label += " ⚠️ 冷门"
+            if r['大球概率'] > 0.6:
+                conf_label += " 📈 大球"
+            elif r['大球概率'] < 0.35:
+                conf_label += " 📉 小球"
             results.append({
                 '主队': match['home_cn'],
                 '客队': match['away_cn'],
@@ -941,7 +1127,9 @@ def predict_all_matches(matches, df_hist, xgb_model, xgb_over_model):
                 '靠谱比分': f"{r['靠谱比分']} ({r['靠谱概率']*100:.1f}%)",
                 '激进比分': f"{r['激进比分']} ({r['激进概率']*100:.1f}%)",
                 '稳健比分': f"{r['稳健比分']} ({r['稳健概率']*100:.1f}%)",
-                '预期进球': f"{r['预期主队进球']:.2f}-{r['预期客队进球']:.2f}"
+                '预期进球': f"{r['预期主队进球']:.2f}-{r['预期客队进球']:.2f}",
+                '分析摘要': r.get('analysis', ''),
+                '信心标签': conf_label.strip()
             })
         except Exception as e:
             logger.error(f"预测 {home} vs {away} 失败: {e}")
@@ -952,45 +1140,58 @@ def predict_all_matches(matches, df_hist, xgb_model, xgb_over_model):
             })
     return pd.DataFrame(results)
 
+# ------------------------- 回测与复盘（优化列名兼容） -------------------------
+def get_odds_columns(df):
+    candidates_h = ['bbmxh', 'maxh', 'avwh', 'b365h', 'pinnacleh', 'whh', 'sxh', 'h']
+    candidates_d = ['bbmxd', 'maxd', 'avwd', 'b365d', 'pinnacled', 'whd', 'sxd', 'd']
+    candidates_a = ['bbmxa', 'maxa', 'avwa', 'b365a', 'pinnaclea', 'wha', 'sxa', 'a']
+    h = next((c for c in candidates_h if c in df.columns), None)
+    d = next((c for c in candidates_d if c in df.columns), None)
+    a = next((c for c in candidates_a if c in df.columns), None)
+    return h, d, a
+
 def run_backtest(start_date, end_date, df_hist, xgb_model, xgb_over_model):
     mask = (df_hist['date'] >= start_date) & (df_hist['date'] <= end_date)
     test_df = df_hist[mask].copy()
     if len(test_df) == 0:
-        return None, "没有找到该时间段的比赛数据", []
-    if 'bbmxh' not in test_df.columns:
-        return None, "数据缺少赔率列，无法回测", []
+        return None, "该时间段没有比赛数据", []
+
+    h_col, d_col, a_col = get_odds_columns(test_df)
+    if not h_col or not d_col or not a_col:
+        logger.warning("未找到标准赔率列，将使用 1.0 默认值进行模拟")
 
     results = []
-    win_correct = 0; draw_correct = 0; lose_correct = 0
-    over_correct = 0; under_correct = 0
-    handicap_minus_correct = 0; handicap_plus_correct = 0
-    total = 0; total_over_under = 0; total_handicap_minus = 0; total_handicap_plus = 0
+    win_correct = draw_correct = lose_correct = 0
+    over_correct = under_correct = 0
+    handicap_minus_correct = handicap_plus_correct = 0
+    total = total_over_under = total_handicap_minus = total_handicap_plus = 0
     win_probs = []; draw_probs = []; lose_probs = []
     actual_win = []; actual_draw = []; actual_lose = []
     prediction_records = []
 
-    for idx, row in test_df.iterrows():
+    for _, row in test_df.iterrows():
         home = row['hometeam']; away = row['awayteam']
         actual_home = row['fthg']; actual_away = row['ftag']
-        if actual_home > actual_away:
-            actual_result = '主胜'
-        elif actual_home == actual_away:
-            actual_result = '平局'
-        else:
-            actual_result = '客胜'
+        if actual_home > actual_away: actual_result = '主胜'
+        elif actual_home == actual_away: actual_result = '平局'
+        else: actual_result = '客胜'
         actual_over = (actual_home + actual_away) >= 3
         actual_minus_res = '主胜' if actual_home - 1 > actual_away else ('平局' if actual_home - 1 == actual_away else '客胜')
         actual_plus_res = '主胜' if actual_home + 1 > actual_away else ('平局' if actual_home + 1 == actual_away else '客胜')
-        odds_h = row['bbmxh'] if pd.notna(row['bbmxh']) else 1.0
-        odds_d = row['bbmxd'] if pd.notna(row['bbmxd']) else 1.0
-        odds_a = row['bbmxa'] if pd.notna(row['bbmxa']) else 1.0
+
+        if h_col and d_col and a_col:
+            odds_h = row[h_col] if pd.notna(row[h_col]) else 1.0
+            odds_d = row[d_col] if pd.notna(row[d_col]) else 1.0
+            odds_a = row[a_col] if pd.notna(row[a_col]) else 1.0
+        else:
+            odds_h = odds_d = odds_a = 1.0
+
         if odds_h <= 0 or odds_d <= 0 or odds_a <= 0:
             continue
 
         try:
             pred = predict_match(home, away, odds_h, odds_d, odds_a, df_hist, xgb_model, xgb_over_model, predict_date=row['date'])
-        except Exception as e:
-            logger.warning(f"回测预测失败: {e}")
+        except:
             continue
 
         pred_labels = {'主胜': pred['主胜'], '平局': pred['平局'], '客胜': pred['客胜']}
@@ -1008,22 +1209,15 @@ def run_backtest(start_date, end_date, df_hist, xgb_model, xgb_over_model):
             if actual_over: over_correct += 1
             else: under_correct += 1
         total_handicap_minus += 1
-        if pred_minus == actual_minus_res:
-            handicap_minus_correct += 1
+        if pred_minus == actual_minus_res: handicap_minus_correct += 1
         total_handicap_plus += 1
-        if pred_plus == actual_plus_res:
-            handicap_plus_correct += 1
+        if pred_plus == actual_plus_res: handicap_plus_correct += 1
 
-        win_probs.append(pred['主胜'])
-        draw_probs.append(pred['平局'])
-        lose_probs.append(pred['客胜'])
+        win_probs.append(pred['主胜']); draw_probs.append(pred['平局']); lose_probs.append(pred['客胜'])
         actual_win.append(1 if actual_result=='主胜' else 0)
         actual_draw.append(1 if actual_result=='平局' else 0)
         actual_lose.append(1 if actual_result=='客胜' else 0)
-        prediction_records.append({
-            'prob': max([pred['主胜'], pred['平局'], pred['客胜']]),
-            'correct': 1 if pred_result == actual_result else 0
-        })
+        prediction_records.append({'prob': max(pred_labels.values()), 'correct': 1 if pred_result == actual_result else 0})
 
         results.append({
             '主队': home, '客队': away,
@@ -1037,7 +1231,7 @@ def run_backtest(start_date, end_date, df_hist, xgb_model, xgb_over_model):
         })
 
     if total == 0:
-        return None, "没有成功预测的比赛", []
+        return None, "该时间段内无可成功预测的比赛（可能缺少赔率）", []
 
     brier_win = brier_score_loss(actual_win, win_probs)
     brier_draw = brier_score_loss(actual_draw, draw_probs)
@@ -1060,6 +1254,16 @@ def run_backtest(start_date, end_date, df_hist, xgb_model, xgb_over_model):
     }
     return pd.DataFrame(results), accuracy, prediction_records
 
+def get_yesterday_results(df_hist, xgb_model, xgb_over_model):
+    today = pd.Timestamp.now().normalize()
+    yesterday = today - timedelta(days=1)
+    mask = (df_hist['date'] >= yesterday) & (df_hist['date'] < today)
+    if len(df_hist[mask]) == 0:
+        return None, f"昨日（{yesterday.date()}）没有比赛数据，请尝试回测其他日期", []
+    results_df, accuracy, _ = run_backtest(yesterday, today - timedelta(seconds=1), df_hist, xgb_model, xgb_over_model)
+    return results_df, accuracy
+
+# ------------------------- 可视化函数 -------------------------
 def plot_accuracy_trend(results_df):
     if 'date' not in results_df.columns or len(results_df) < 5:
         st.info("数据量不足，无法绘制趋势图")
@@ -1153,70 +1357,7 @@ def plot_prob_distribution(score_probs):
     ax.set_ylabel('概率')
     st.pyplot(fig)
 
-try:
-    from xgpy import Understat
-    XGPY_AVAILABLE = True
-except ImportError:
-    XGPY_AVAILABLE = False
-
-try:
-    import requests
-    from bs4 import BeautifulSoup
-    SCRAPE_AVAILABLE = True
-except ImportError:
-    SCRAPE_AVAILABLE = False
-
-def get_injury_info(team, df_history, date_limit):
-    if not SCRAPE_AVAILABLE:
-        return 0
-    try:
-        team_url = team.replace(' ', '-').lower()
-        url = f"https://www.transfermarkt.com/{team_url}/verletztespieler/verein/0"
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(url, headers=headers, timeout=10)
-        if response.status_code != 200:
-            return 0
-        soup = BeautifulSoup(response.text, 'html.parser')
-        injury_rows = soup.select('table.items tbody tr')
-        key_injuries = 0
-        for row in injury_rows:
-            cells = row.find_all('td')
-            if len(cells) >= 2:
-                key_injuries += 1
-        if key_injuries >= 3:
-            return 2
-        elif key_injuries >= 1:
-            return 1
-        return 0
-    except Exception as e:
-        return 0
-
-def get_xg_data(team, df_history, date_limit):
-    if not XGPY_AVAILABLE:
-        return 0.0
-    try:
-        understat = Understat()
-        leagues = ['EPL', 'La_liga', 'Bundesliga', 'Serie_A', 'Ligue_1']
-        total_xg = 0
-        count = 0
-        for league in leagues:
-            try:
-                matches = understat.get_league_matches(league, season='2024')
-                for match in matches:
-                    if match.get('h') == team or match.get('a') == team:
-                        if match.get('h') == team:
-                            total_xg += float(match.get('h_xG', 0))
-                        else:
-                            total_xg += float(match.get('a_xG', 0))
-                        count += 1
-                        if count >= 10:
-                            return total_xg / count
-            except:
-                continue
-        return total_xg / count if count > 0 else 0.0
-    except Exception as e:
-        return 0.0
-
+# 爆冷、焦点战函数（略作调整，返回 analysis）
 def calculate_upset_index(match, df_hist, xgb_model, xgb_over_model):
     home = match['home_en']; away = match['away_en']
     odds_h = match['odds_h']; odds_d = match['odds_d']; odds_a = match['odds_a']
@@ -1255,7 +1396,8 @@ def calculate_upset_index(match, df_hist, xgb_model, xgb_over_model):
         'upset_index': upset_index,
         'reliable_score': result['靠谱比分'], 'aggressive_score': result['激进比分'], 'conservative_score': result['稳健比分'],
         'home_win_prob': result['主胜'], 'draw_prob': result['平局'], 'away_win_prob': result['客胜'],
-        'over_prob': result['大球概率'], 'home_goals': result['预期主队进球'], 'away_goals': result['预期客队进球']
+        'over_prob': result['大球概率'], 'home_goals': result['预期主队进球'], 'away_goals': result['预期客队进球'],
+        'analysis': result.get('analysis', '')
     }
 
 def get_upset_matches(matches, df_hist, xgb_model, xgb_over_model, top_n=5):
@@ -1297,13 +1439,6 @@ def get_focus_matches(matches, df_hist, top_n=3):
         })
     focus.sort(key=lambda x: x['focus_score'], reverse=True)
     return focus[:top_n]
-
-def get_yesterday_results(df_hist, xgb_model, xgb_over_model):
-    today = pd.Timestamp.now().normalize()
-    yesterday = today - timedelta(days=1)
-    results_df, accuracy, _ = run_backtest(yesterday, today - timedelta(seconds=1), df_hist, xgb_model, xgb_over_model)
-    return results_df, accuracy
-
 # ===================== Streamlit UI =====================
 st.set_page_config(page_title="精算足球预测器 · 优化版", page_icon="⚽", layout="wide")
 
@@ -1313,6 +1448,12 @@ if df_hist is None:
     st.stop()
 
 xgb_model, xgb_over_model = get_xgb_models(df_hist)
+
+# 显示数据范围
+if df_hist is not None and not df_hist.empty:
+    min_date = df_hist['date'].min().date()
+    max_date = df_hist['date'].max().date()
+    st.info(f"📊 历史数据范围：**{min_date}** 至 **{max_date}**，共 **{len(df_hist)}** 场比赛")
 
 st.sidebar.header("⚙️ 参数调整")
 defaults = {
@@ -1360,7 +1501,7 @@ st.sidebar.slider("Dixon-Coles rho", -0.3, 0.0, st.session_state.rho_value, 0.01
 st.sidebar.slider("XGBoost 融合权重", 0.0, 1.0, st.session_state.xgb_fusion_weight, 0.05, key="_xgb_fusion_weight", on_change=update_xgb)
 
 st.title("⚽ 精算足球预测器 · 优化版")
-st.caption("集成 Elo + 动态阈值 + 波动性 + 风格聚类 + XGBoost 融合 + 焦点战推荐 | 性能大幅提升")
+st.caption("集成 Elo + 主客场分离 + 状态趋势 + 爆冷分析 + 信心标签 | 接入 The Odds API")
 
 st.sidebar.header("📋 今日预测")
 if 'prediction_history' not in st.session_state:
@@ -1399,6 +1540,7 @@ if st.sidebar.checkbox("📋 显示所有球队名称（中英文）"):
     except Exception as e:
         st.sidebar.error(f"无法加载球队数据: {e}")
 
+# 初始化 session_state
 if "fetch_odds_trigger" not in st.session_state:
     st.session_state.fetch_odds_trigger = False
 if "odds_h" not in st.session_state:
@@ -1450,13 +1592,14 @@ if st.session_state.fetch_odds_trigger:
     st.session_state.fetch_odds_trigger = False
     st.rerun()
 
+# ===================== 单场预测 =====================
 if mode == "单场预测":
     st.subheader("🔮 单场预测")
     st.markdown("---")
     col_load1, col_load2 = st.columns([1, 3])
     with col_load1:
         if st.button("📅 加载今日比赛"):
-            with st.spinner("正在拉取体彩今日比赛..."):
+            with st.spinner("正在拉取比赛数据..."):
                 matches, missing = fetch_all_matches()
                 if matches:
                     st.session_state.match_list = matches
@@ -1570,6 +1713,8 @@ if mode == "单场预测":
                         st.metric("推荐稳健比分", upset['conservative_score'])
                     st.write(f"胜平负概率: 主胜 {upset['home_win_prob']*100:.1f}% | 平局 {upset['draw_prob']*100:.1f}% | 客胜 {upset['away_win_prob']*100:.1f}%")
                     st.write(f"预期进球: {upset['home_goals']:.2f} - {upset['away_goals']:.2f}")
+                    if upset['analysis']:
+                        st.caption(f"📝 {upset['analysis']}")
                     if upset['diff'] > 0:
                         st.info(f"💡 提示：{upset['away']} 有 {upset['weak_win_prob']*100:.1f}% 的概率客场爆冷击败 {upset['home']}，赔率 {upset['weak_odds']:.2f} 倍")
                     else:
@@ -1600,7 +1745,8 @@ if mode == "单场预测":
                     col2.metric("概率", f"{item['prob']*100:.1f}%")
                     col3.metric("靠谱比分", r['靠谱比分'])
                     st.write(f"胜 {r['主胜']*100:.1f}% / 平 {r['平局']*100:.1f}% / 客胜 {r['客胜']*100:.1f}%")
-                    st.caption(f"💡 {r['reason']}")
+                    if r.get('analysis'):
+                        st.caption(f"📝 {r['analysis']}")
                     st.markdown("---")
 
         if st.session_state.yesterday_results is not None and st.session_state.yesterday_accuracy is not None:
@@ -1671,7 +1817,8 @@ if mode == "单场预测":
                     st.write(f"靠谱: {result['靠谱比分']} ({result['靠谱概率']*100:.1f}%)")
                     st.write(f"激进: {result['激进比分']} ({result['激进概率']*100:.1f}%)")
                     st.write(f"稳健: {result['稳健比分']} ({result['稳健概率']*100:.1f}%)")
-                    st.caption(f"💡 {result['reason']}")
+                    if result.get('analysis'):
+                        st.caption(f"📝 {result['analysis']}")
 
                     st.caption("📊 比分概率 Top5")
                     score_df = pd.DataFrame(result['比分概率'], columns=["比分", "概率"])
@@ -1742,7 +1889,8 @@ if mode == "单场预测":
                 st.write(f"靠谱: {result['靠谱比分']} ({result['靠谱概率']*100:.1f}%)")
                 st.write(f"激进: {result['激进比分']} ({result['激进概率']*100:.1f}%)")
                 st.write(f"稳健: {result['稳健比分']} ({result['稳健概率']*100:.1f}%)")
-                st.caption(f"💡 {result['reason']}")
+                if result.get('analysis'):
+                    st.caption(f"📝 {result['analysis']}")
                 st.caption("📊 比分概率 Top5")
                 score_df = pd.DataFrame(result['比分概率'], columns=["比分", "概率"])
                 score_df["概率"] = score_df["概率"].apply(lambda x: f"{x*100:.1f}%")
@@ -1752,14 +1900,17 @@ if mode == "单场预测":
                 st.error(f"预测出错: {e}")
                 st.info("请检查队名是否为英文全称（如 Manchester City）")
 
+# ===================== 回测模式 =====================
 elif mode == "回测":
     st.subheader("📈 回测分析")
     st.markdown("选择要回测的时间范围，系统将模拟预测并统计准确率。")
+    latest_date = df_hist['date'].max().date()
+    earliest_date = df_hist['date'].min().date()
     col1, col2 = st.columns(2)
     with col1:
-        start_date = st.date_input("开始日期", value=pd.to_datetime("2024-01-01"))
+        start_date = st.date_input("开始日期", value=earliest_date, min_value=earliest_date, max_value=latest_date)
     with col2:
-        end_date = st.date_input("结束日期", value=pd.Timestamp.now())
+        end_date = st.date_input("结束日期", value=latest_date, min_value=earliest_date, max_value=latest_date)
     if st.button("🚀 运行回测"):
         if start_date >= end_date:
             st.warning("开始日期必须早于结束日期")
@@ -1773,17 +1924,13 @@ elif mode == "回测":
                     st.error(accuracy)
                 else:
                     st.success("回测完成！")
-
                     st.subheader("📊 准确率统计")
                     acc_df = pd.DataFrame([accuracy]).T.rename(columns={0:'值'})
                     st.table(acc_df)
-
                     st.subheader("📈 可视化分析")
                     tab1, tab2, tab3 = st.tabs(["准确率趋势", "概率校准", "盈亏模拟"])
-
                     with tab1:
                         plot_accuracy_trend(results_df)
-
                     with tab2:
                         if pred_records and len(pred_records) > 5:
                             probs = [r['prob'] for r in pred_records]
@@ -1791,15 +1938,14 @@ elif mode == "回测":
                             plot_calibration_curve(probs, outcomes)
                         else:
                             st.info("数据量不足，无法绘制校准曲线")
-
                     with tab3:
                         simulate_kelly_profit(results_df)
-
                     st.subheader("📋 详细预测对比")
                     st.dataframe(results_df, use_container_width=True)
                     csv = results_df.to_csv(index=False, encoding='utf-8-sig')
                     st.download_button("📥 下载详细结果", csv, "backtest_results.csv", "text/csv")
 
+# ===================== 批量预测模式（CSV上传） =====================
 else:
     st.subheader("📁 批量预测（CSV上传）")
     st.markdown("上传 CSV 文件，格式必须包含以下列：")
@@ -1829,6 +1975,7 @@ else:
                                 '靠谱比分': f"{r['靠谱比分']} ({r['靠谱概率']*100:.1f}%)",
                                 '激进比分': f"{r['激进比分']} ({r['激进概率']*100:.1f}%)",
                                 '稳健比分': f"{r['稳健比分']} ({r['稳健概率']*100:.1f}%)",
+                                '分析摘要': r.get('analysis', '')
                             })
                         except Exception as e:
                             results.append({'主队': row['home_team'], '客队': row['away_team'], '错误': str(e)})
