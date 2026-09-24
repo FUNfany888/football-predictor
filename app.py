@@ -33,7 +33,12 @@ logger = logging.getLogger(__name__)
 SEASONS = ['2223', '2324', '2425', '2526']
 LEAGUES = ['E0', 'E1', 'E2', 'SP1', 'FR1', 'D1', 'I1', 'EC']
 HISTORY_PATH = 'history.parquet'
-SCRIPT_PATH = r"C:\Users\曹亚楠\Desktop\worldcup-betting-analyst-skill\scripts\fetch_sporttery.py"
+import os
+# 兼容本地和云端：云端用相对路径，本地优先用本地路径
+_LOCAL_SCRIPT = r"C:\Users\曹亚楠\Desktop\worldcup-betting-analyst-skill\scripts\fetch_sporttery.py"
+_CLOUD_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'scripts', 'fetch_sporttery.py')
+
+SCRIPT_PATH = _LOCAL_SCRIPT if os.path.exists(_LOCAL_SCRIPT) else _CLOUD_SCRIPT
 PREDICTIONS_DIR = 'predictions'
 
 _DF_HIST = None
