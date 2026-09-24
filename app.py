@@ -984,7 +984,7 @@ def _run_sporttery_script():
     if not os.path.exists(SCRIPT_PATH):
         return None, "体彩脚本不存在"
     try:
-        cmd = [sys.executable, SCRIPT_PATH, "--pretty"]
+        cmd = [sys.executable, SCRIPT_PATH, "--pretty", "--pool-code", "hhad,had"]
         result = subprocess.run(cmd, capture_output=True, timeout=60)
         if not result.stdout or len(result.stdout) == 0:
             stderr_msg = ""
@@ -1044,6 +1044,7 @@ def fetch_all_matches():
         })
     if skipped_count > 0:
         st.info(f"已跳过 {skipped_count} 场无胜平负赔率的比赛")
+        st.info(f"🔍 调试：脚本返回 {len(matches)} 场比赛，其中有胜平负赔率的 {len(match_list)} 场")
     if not match_list:
         st.warning("体彩脚本返回了数据，但没有可用的胜平负赔率")
     return match_list, missing_teams
