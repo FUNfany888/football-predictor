@@ -1,6 +1,6 @@
 {
-  "fetched_at": "2026-09-28T11:06:17.727307",
-  "count": 8,
+  "fetched_at": "2026-09-28T17:34:37.131683",
+  "count": 10,
   "matches": [
     {
       "match_num": "周一001",
@@ -9,9 +9,9 @@
       "league": "国际赛",
       "match_date": "2026-09-28",
       "match_time": "18:25:00",
-      "odds_h": 1.18,
-      "odds_d": 5.15,
-      "odds_a": 11.5
+      "odds_h": 1.13,
+      "odds_d": 5.9,
+      "odds_a": 13.5
     },
     {
       "match_num": "周一002",
@@ -20,8 +20,8 @@
       "league": "国际赛",
       "match_date": "2026-09-28",
       "match_time": "19:00:00",
-      "odds_h": 2.31,
-      "odds_d": 3.05,
+      "odds_h": 2.37,
+      "odds_d": 2.95,
       "odds_a": 2.71
     },
     {
@@ -31,9 +31,9 @@
       "league": "欧洲国家联赛",
       "match_date": "2026-09-29",
       "match_time": "00:00:00",
-      "odds_h": 2.5,
-      "odds_d": 3.05,
-      "odds_a": 2.5
+      "odds_h": 2.83,
+      "odds_d": 2.85,
+      "odds_a": 2.35
     },
     {
       "match_num": "周一004",
@@ -42,9 +42,9 @@
       "league": "欧洲国家联赛",
       "match_date": "2026-09-29",
       "match_time": "02:45:00",
-      "odds_h": 2.65,
+      "odds_h": 2.58,
       "odds_d": 3.3,
-      "odds_a": 2.23
+      "odds_a": 2.28
     },
     {
       "match_num": "周一005",
@@ -53,9 +53,9 @@
       "league": "欧洲国家联赛",
       "match_date": "2026-09-29",
       "match_time": "02:45:00",
-      "odds_h": 3.55,
-      "odds_d": 3.71,
-      "odds_a": 1.73
+      "odds_h": 3.77,
+      "odds_d": 3.77,
+      "odds_a": 1.67
     },
     {
       "match_num": "周一006",
@@ -75,9 +75,9 @@
       "league": "欧洲国家联赛",
       "match_date": "2026-09-29",
       "match_time": "02:45:00",
-      "odds_h": 1.82,
+      "odds_h": 1.78,
       "odds_d": 3.4,
-      "odds_a": 3.5
+      "odds_a": 3.65
     },
     {
       "match_num": "周一008",
@@ -86,9 +86,31 @@
       "league": "欧洲国家联赛",
       "match_date": "2026-09-29",
       "match_time": "02:45:00",
-      "odds_h": 2.6,
+      "odds_h": 2.77,
       "odds_d": 2.87,
-      "odds_a": 2.52
+      "odds_a": 2.38
+    },
+    {
+      "match_num": "周二001",
+      "home_cn": "朝鲜女足",
+      "away_cn": "中国女足",
+      "league": "亚运会女足",
+      "match_date": "2026-09-29",
+      "match_time": "14:00:00",
+      "odds_h": 1.32,
+      "odds_d": 4.25,
+      "odds_a": 7.3
+    },
+    {
+      "match_num": "周二007",
+      "home_cn": "日本女足",
+      "away_cn": "韩国女足",
+      "league": "亚运会女足",
+      "match_date": "2026-09-29",
+      "match_time": "18:30:00",
+      "odds_h": 1.15,
+      "odds_d": 5.8,
+      "odds_a": 11.5
     }
   ]
 }
