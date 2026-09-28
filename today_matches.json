@@ -1,5 +1,94 @@
 {
-  "fetched_at": "2026-09-28T10:32:05.787520",
-  "count": 0,
-  "matches": []
+  "fetched_at": "2026-09-28T11:06:17.727307",
+  "count": 8,
+  "matches": [
+    {
+      "match_num": "周一001",
+      "home_cn": "日本",
+      "away_cn": "委内瑞拉",
+      "league": "国际赛",
+      "match_date": "2026-09-28",
+      "match_time": "18:25:00",
+      "odds_h": 1.18,
+      "odds_d": 5.15,
+      "odds_a": 11.5
+    },
+    {
+      "match_num": "周一002",
+      "home_cn": "韩国",
+      "away_cn": "乌拉圭",
+      "league": "国际赛",
+      "match_date": "2026-09-28",
+      "match_time": "19:00:00",
+      "odds_h": 2.31,
+      "odds_d": 3.05,
+      "odds_a": 2.71
+    },
+    {
+      "match_num": "周一003",
+      "home_cn": "亚美尼亚",
+      "away_cn": "黑山",
+      "league": "欧洲国家联赛",
+      "match_date": "2026-09-29",
+      "match_time": "00:00:00",
+      "odds_h": 2.5,
+      "odds_d": 3.05,
+      "odds_a": 2.5
+    },
+    {
+      "match_num": "周一004",
+      "home_cn": "土耳其",
+      "away_cn": "意大利",
+      "league": "欧洲国家联赛",
+      "match_date": "2026-09-29",
+      "match_time": "02:45:00",
+      "odds_h": 2.65,
+      "odds_d": 3.3,
+      "odds_a": 2.23
+    },
+    {
+      "match_num": "周一005",
+      "home_cn": "比利时",
+      "away_cn": "法国",
+      "league": "欧洲国家联赛",
+      "match_date": "2026-09-29",
+      "match_time": "02:45:00",
+      "odds_h": 3.55,
+      "odds_d": 3.71,
+      "odds_a": 1.73
+    },
+    {
+      "match_num": "周一006",
+      "home_cn": "罗马尼亚",
+      "away_cn": "波黑",
+      "league": "欧洲国家联赛",
+      "match_date": "2026-09-29",
+      "match_time": "02:45:00",
+      "odds_h": 1.92,
+      "odds_d": 3.22,
+      "odds_a": 3.35
+    },
+    {
+      "match_num": "周一007",
+      "home_cn": "瑞典",
+      "away_cn": "波兰",
+      "league": "欧洲国家联赛",
+      "match_date": "2026-09-29",
+      "match_time": "02:45:00",
+      "odds_h": 1.82,
+      "odds_d": 3.4,
+      "odds_a": 3.5
+    },
+    {
+      "match_num": "周一008",
+      "home_cn": "北爱尔兰",
+      "away_cn": "匈牙利",
+      "league": "欧洲国家联赛",
+      "match_date": "2026-09-29",
+      "match_time": "02:45:00",
+      "odds_h": 2.6,
+      "odds_d": 2.87,
+      "odds_a": 2.52
+    }
+  ]
 }
